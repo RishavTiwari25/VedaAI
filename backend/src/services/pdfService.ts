@@ -1,128 +1,192 @@
-import puppeteer from 'puppeteer';
+import PDFDocument from 'pdfkit';
 import { GeneratedPaper } from '../types';
 
-function generateHTML(paper: GeneratedPaper, assignmentTitle: string): string {
-  const { metadata, sections } = paper;
-
-  const difficultyColor: Record<string, string> = {
-    Easy: '#16a34a',
-    Moderate: '#d97706',
-    Hard: '#dc2626',
-  };
-
-  const sectionsHTML = sections.map(section => {
-    const questionsHTML = section.questions.map((q, idx) => `
-      <div class="question">
-        <div class="question-header">
-          <span class="q-number">${idx + 1}.</span>
-          <span class="q-text">${q.text}</span>
-        </div>
-        <div class="question-meta">
-          <span class="difficulty-badge" style="color: ${difficultyColor[q.difficulty] || '#000'}; border-color: ${difficultyColor[q.difficulty] || '#000'}">${q.difficulty}</span>
-          <span class="marks">[${q.marks} Mark${q.marks > 1 ? 's' : ''}]</span>
-        </div>
-      </div>
-    `).join('');
-
-    const answersHTML = section.questions.map((q, idx) => q.answerKey ? `
-      <div class="answer-item">
-        <strong>${idx + 1}.</strong> ${q.answerKey}
-      </div>
-    ` : '').join('');
-
-    return `
-      <div class="section">
-        <h2 class="section-title">${section.title}</h2>
-        <p class="section-instruction">${section.instruction}</p>
-        <div class="questions">${questionsHTML}</div>
-        ${answersHTML ? `<div class="answer-key"><h3>Answer Key - ${section.title}</h3>${answersHTML}</div>` : ''}
-      </div>
-    `;
-  }).join('');
-
-  return `
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>${assignmentTitle} - Question Paper</title>
-  <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { font-family: 'Times New Roman', serif; font-size: 12pt; color: #000; background: #fff; padding: 20mm; }
-    .header { text-align: center; border-bottom: 2px solid #000; padding-bottom: 12px; margin-bottom: 16px; }
-    .school-name { font-size: 18pt; font-weight: bold; margin-bottom: 4px; }
-    .subject { font-size: 14pt; font-weight: bold; }
-    .class-info { font-size: 11pt; margin-top: 4px; }
-    .meta-row { display: flex; justify-content: space-between; margin: 12px 0; font-size: 11pt; }
-    .student-info { border: 1px solid #ccc; padding: 12px; margin: 16px 0; display: flex; gap: 40px; }
-    .student-field { display: flex; flex-direction: column; gap: 4px; }
-    .student-field label { font-size: 9pt; color: #666; }
-    .student-field .line { border-bottom: 1px solid #000; width: 120px; height: 20px; }
-    .instructions { font-size: 10pt; font-style: italic; margin-bottom: 20px; }
-    .section { margin-bottom: 28px; page-break-inside: avoid; }
-    .section-title { font-size: 14pt; font-weight: bold; text-transform: uppercase; letter-spacing: 1px; background: #f0f0f0; padding: 6px 12px; margin-bottom: 6px; }
-    .section-instruction { font-size: 10pt; font-style: italic; margin-bottom: 12px; color: #444; }
-    .question { margin-bottom: 14px; }
-    .question-header { display: flex; gap: 8px; margin-bottom: 4px; }
-    .q-number { font-weight: bold; min-width: 20px; }
-    .q-text { flex: 1; line-height: 1.5; }
-    .question-meta { display: flex; gap: 12px; margin-left: 28px; align-items: center; }
-    .difficulty-badge { font-size: 9pt; font-weight: bold; border: 1px solid; border-radius: 4px; padding: 1px 6px; }
-    .marks { font-size: 10pt; color: #555; }
-    .answer-key { margin-top: 20px; border-top: 1px dashed #999; padding-top: 12px; }
-    .answer-key h3 { font-size: 11pt; margin-bottom: 8px; }
-    .answer-item { margin-bottom: 8px; font-size: 10pt; line-height: 1.4; }
-    @media print { body { padding: 15mm; } .section { page-break-inside: avoid; } }
-  </style>
-</head>
-<body>
-  <div class="header">
-    <div class="school-name">${metadata.schoolName}</div>
-    <div class="subject">Subject: ${metadata.subject}</div>
-    <div class="class-info">Class: ${metadata.className}</div>
-  </div>
-  <div class="meta-row">
-    <span>Time Allowed: ${metadata.timeAllowed}</span>
-    <span>Maximum Marks: ${metadata.totalMarks}</span>
-  </div>
-  <p class="instructions">All questions are compulsory unless stated otherwise.</p>
-  <div class="student-info">
-    <div class="student-field"><label>Name:</label><div class="line"></div></div>
-    <div class="student-field"><label>Roll Number:</label><div class="line"></div></div>
-    <div class="student-field"><label>Section:</label><div class="line"></div></div>
-  </div>
-  ${sectionsHTML}
-</body>
-</html>`;
-}
-
 export async function generatePDF(paper: GeneratedPaper, assignmentTitle: string): Promise<Buffer> {
-  const html = generateHTML(paper, assignmentTitle);
+  return new Promise((resolve, reject) => {
+    const doc = new PDFDocument({ margin: 50, size: 'A4' });
+    const chunks: Buffer[] = [];
 
-  const browser = await puppeteer.launch({
-    headless: true,
-    executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || puppeteer.executablePath(),
-    args: [
-      '--no-sandbox',
-      '--disable-setuid-sandbox',
-      '--disable-dev-shm-usage',
-      '--disable-gpu',
-      '--single-process',
-      '--no-zygote',
-    ],
+    doc.on('data', (chunk: Buffer) => chunks.push(chunk));
+    doc.on('end', () => resolve(Buffer.concat(chunks)));
+    doc.on('error', reject);
+
+    const { metadata, sections } = paper;
+
+    // ─── HEADER ────────────────────────────────────────────────────────────
+    doc
+      .fontSize(18)
+      .font('Helvetica-Bold')
+      .text(metadata.schoolName || 'School Name', { align: 'center' });
+
+    doc
+      .fontSize(13)
+      .font('Helvetica-Bold')
+      .text(`Subject: ${metadata.subject}`, { align: 'center' });
+
+    doc
+      .fontSize(11)
+      .font('Helvetica')
+      .text(`Class: ${metadata.className}`, { align: 'center' });
+
+    doc.moveDown(0.5);
+
+    // Horizontal rule
+    doc
+      .moveTo(50, doc.y)
+      .lineTo(doc.page.width - 50, doc.y)
+      .lineWidth(1.5)
+      .stroke();
+
+    doc.moveDown(0.5);
+
+    // ─── META ROW ──────────────────────────────────────────────────────────
+    const metaY = doc.y;
+    doc
+      .fontSize(10)
+      .font('Helvetica')
+      .text(`Time Allowed: ${metadata.timeAllowed}`, 50, metaY)
+      .text(`Maximum Marks: ${metadata.totalMarks}`, { align: 'right' });
+
+    doc.moveDown(0.5);
+
+    // Student info box
+    const boxY = doc.y;
+    doc
+      .rect(50, boxY, doc.page.width - 100, 40)
+      .stroke();
+
+    doc.fontSize(9).font('Helvetica');
+    doc.text('Name: ________________________', 60, boxY + 8);
+    doc.text('Roll No: __________   Section: __________', 60, boxY + 22);
+
+    doc.y = boxY + 50;
+    doc.moveDown(0.5);
+
+    // Instructions
+    doc
+      .fontSize(9)
+      .font('Helvetica-Oblique')
+      .text('All questions are compulsory unless stated otherwise.', { align: 'center' });
+
+    doc.moveDown(1);
+
+    // ─── SECTIONS ──────────────────────────────────────────────────────────
+    for (const section of sections) {
+      // Section title background
+      const titleY = doc.y;
+      doc
+        .rect(50, titleY, doc.page.width - 100, 20)
+        .fill('#f0f0f0')
+        .fillColor('black');
+
+      doc
+        .fontSize(12)
+        .font('Helvetica-Bold')
+        .text(section.title.toUpperCase(), 60, titleY + 4);
+
+      doc.y = titleY + 26;
+      doc.moveDown(0.3);
+
+      // Section instruction
+      doc
+        .fontSize(9)
+        .font('Helvetica-Oblique')
+        .fillColor('#444444')
+        .text(section.instruction || '');
+
+      doc.fillColor('black');
+      doc.moveDown(0.5);
+
+      // ─── QUESTIONS ───────────────────────────────────────────────────────
+      section.questions.forEach((q, idx) => {
+        const difficultyColor: Record<string, string> = {
+          Easy: '#16a34a',
+          Moderate: '#d97706',
+          Hard: '#dc2626',
+        };
+        const color = difficultyColor[q.difficulty] || '#000000';
+
+        // Check page space
+        if (doc.y > doc.page.height - 120) doc.addPage();
+
+        doc
+          .fontSize(11)
+          .font('Helvetica-Bold')
+          .fillColor('black')
+          .text(`${idx + 1}. `, { continued: true })
+          .font('Helvetica')
+          .text(q.text || '', { lineGap: 2 });
+
+        doc.moveDown(0.2);
+
+        // Difficulty + Marks badge
+        doc
+          .fontSize(8)
+          .font('Helvetica-Bold')
+          .fillColor(color)
+          .text(`[${q.difficulty}]`, 70, doc.y, { continued: true })
+          .fillColor('#555555')
+          .font('Helvetica')
+          .text(`  ${q.marks} Mark${q.marks > 1 ? 's' : ''}`);
+
+        doc.fillColor('black');
+        doc.moveDown(0.6);
+      });
+
+      // ─── ANSWER KEY ──────────────────────────────────────────────────────
+      const hasAnswers = section.questions.some(q => q.answerKey);
+      if (hasAnswers) {
+        if (doc.y > doc.page.height - 100) doc.addPage();
+
+        doc.moveDown(0.5);
+        doc
+          .moveTo(50, doc.y)
+          .lineTo(doc.page.width - 50, doc.y)
+          .lineWidth(0.5)
+          .dash(4, { space: 4 })
+          .stroke()
+          .undash();
+
+        doc.moveDown(0.3);
+
+        doc
+          .fontSize(10)
+          .font('Helvetica-Bold')
+          .text(`Answer Key — ${section.title}`);
+
+        doc.moveDown(0.3);
+
+        section.questions.forEach((q, idx) => {
+          if (!q.answerKey) return;
+          if (doc.y > doc.page.height - 80) doc.addPage();
+
+          doc
+            .fontSize(9)
+            .font('Helvetica-Bold')
+            .text(`${idx + 1}. `, { continued: true })
+            .font('Helvetica')
+            .text(q.answerKey, { lineGap: 2 });
+
+          doc.moveDown(0.4);
+        });
+      }
+
+      doc.moveDown(1);
+    }
+
+    // ─── FOOTER ────────────────────────────────────────────────────────────
+    const footerY = doc.page.height - 40;
+    doc
+      .fontSize(8)
+      .font('Helvetica')
+      .fillColor('#888888')
+      .text(
+        `Generated by VedaAI • ${assignmentTitle} • ${new Date().toLocaleDateString('en-IN')}`,
+        50,
+        footerY,
+        { align: 'center', width: doc.page.width - 100 }
+      );
+
+    doc.end();
   });
-
-  try {
-    const page = await browser.newPage();
-    await page.setContent(html, { waitUntil: 'networkidle0' });
-    const pdf = await page.pdf({
-      format: 'A4',
-      margin: { top: '20mm', bottom: '20mm', left: '20mm', right: '20mm' },
-      printBackground: true,
-    });
-    return Buffer.from(pdf);
-  } finally {
-    await browser.close();
-  }
 }
